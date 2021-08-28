@@ -9,7 +9,7 @@ import (
 
 // The start of PriorityQueue implementation.
 // Borrowed from https://github.com/nsqio/nsq/blob/master/internal/pqueue/pqueue.go
-
+// 关于这个优先队列，可以参考自己项目的分析：https://github.com/Spongecaptain/commonDataStructure/tree/main/pqueue
 type item struct {
 	Value    interface{}
 	Priority int64

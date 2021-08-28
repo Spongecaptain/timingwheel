@@ -11,23 +11,30 @@ import (
 
 // TimingWheel is an implementation of Hierarchical Timing Wheels.
 type TimingWheel struct {
-	tick      int64 // in milliseconds
+	// 时间跨度，单位是毫秒（也就是最小时间精度，最内圈时间格的大小）
+	tick int64 // in milliseconds
+	// 该层时间轮个数
 	wheelSize int64
-
-	interval    int64 // in milliseconds
+	// 该层可以表示的总时间 interval = tick * milliseconds *
+	interval int64 // in milliseconds
+	// 当前时间
 	currentTime int64 // in milliseconds
-	buckets     []*bucket
-	queue       *delayqueue.DelayQueue
-
+	// 时间格列表，其大小就是 wheelsize
+	buckets []*bucket
+	// 延迟队列
+	queue *delayqueue.DelayQueue
+	// 上一层时间轮
 	// The higher-level overflow wheel.
 	//
 	// NOTE: This field may be updated and read concurrently, through Add().
 	overflowWheel unsafe.Pointer // type: *TimingWheel
-
-	exitC     chan struct{}
+	// 用于接收退出信号的 channel
+	exitC chan struct{}
+	// 这个暂时不知道是做什么的
 	waitGroup waitGroupWrapper
 }
 
+// 工厂方法
 // NewTimingWheel creates an instance of TimingWheel with the given tick and wheelSize.
 func NewTimingWheel(tick time.Duration, wheelSize int64) *TimingWheel {
 	tickMs := int64(tick / time.Millisecond)
@@ -64,10 +71,12 @@ func newTimingWheel(tickMs int64, wheelSize int64, startMs int64, queue *delayqu
 
 // add inserts the timer t into the current timing wheel.
 func (tw *TimingWheel) add(t *Timer) bool {
+	// 如果任务已经过期，那么直接返回 false
 	currentTime := atomic.LoadInt64(&tw.currentTime)
 	if t.expiration < currentTime+tw.tick {
 		// Already expired
 		return false
+		// 说明可以放在第一级时间轮中
 	} else if t.expiration < currentTime+tw.interval {
 		// Put it into its own bucket
 		virtualID := t.expiration / tw.tick
@@ -86,6 +95,7 @@ func (tw *TimingWheel) add(t *Timer) bool {
 		}
 
 		return true
+		// 放到高一级别的时间轮中
 	} else {
 		// Out of the interval. Put it into the overflow wheel
 		overflowWheel := atomic.LoadPointer(&tw.overflowWheel)
@@ -132,14 +142,17 @@ func (tw *TimingWheel) advanceClock(expiration int64) {
 	}
 }
 
+// 开启时间轮
 // Start starts the current timing wheel.
 func (tw *TimingWheel) Start() {
+	// tw.exitC 的作用是退出通知
+	// 这里启动的协程工作是，将延迟队列中到期的元素放到延迟队列的 channel C 中
 	tw.waitGroup.Wrap(func() {
 		tw.queue.Poll(tw.exitC, func() int64 {
 			return timeToMs(time.Now().UTC())
 		})
 	})
-
+	// 下面的协程用于将过期时间已经到的任务加入到时间轮中，以及时钟的推进
 	tw.waitGroup.Wrap(func() {
 		for {
 			select {
@@ -154,6 +167,7 @@ func (tw *TimingWheel) Start() {
 	})
 }
 
+// 关闭
 // Stop stops the current timing wheel.
 //
 // If there is any timer's task being running in its own goroutine, Stop does
@@ -164,6 +178,7 @@ func (tw *TimingWheel) Stop() {
 	tw.waitGroup.Wait()
 }
 
+// 最终会导致：等待 d 时间后新建一个 goroutine 来负责执行此任务
 // AfterFunc waits for the duration to elapse and then calls f in its own goroutine.
 // It returns a Timer that can be used to cancel the call using its Stop method.
 func (tw *TimingWheel) AfterFunc(d time.Duration, f func()) *Timer {
@@ -175,6 +190,7 @@ func (tw *TimingWheel) AfterFunc(d time.Duration, f func()) *Timer {
 	return t
 }
 
+// Scheduler 用于为定时任务确定下一次执行的时机
 // Scheduler determines the execution plan of a task.
 type Scheduler interface {
 	// Next returns the next execution time after the given (previous) time.
@@ -208,6 +224,7 @@ func (tw *TimingWheel) ScheduleFunc(s Scheduler, f func()) (t *Timer) {
 
 	t = &Timer{
 		expiration: timeToMs(expiration),
+		// 定时（循环）任务，第一步是自己重新注册，第二步才是执行自己的任务
 		task: func() {
 			// Schedule the task to execute at the next time if possible.
 			expiration := s.Next(msToTime(t.expiration))

@@ -29,10 +29,11 @@ type waitGroupWrapper struct {
 	sync.WaitGroup
 }
 
-func (w *waitGroupWrapper) Wrap(cb func()) {
+// Wrap 作用就是启动一个异步协程来执行传入的 f，执行完毕后，调用 WaitGroup.Done 用于协程之间的并发控制
+func (w *waitGroupWrapper) Wrap(f func()) {
 	w.Add(1)
 	go func() {
-		cb()
+		f()
 		w.Done()
 	}()
 }

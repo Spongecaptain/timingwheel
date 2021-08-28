@@ -10,15 +10,19 @@ import (
 // Timer represents a single event. When the Timer expires, the given
 // task will be executed.
 type Timer struct {
+	// expiration 过期时间，用于控制什么时候加入时间轮，注意，这是一个 int64 数值，代表时间戳
 	expiration int64 // in milliseconds
-	task       func()
+	// task 要执行的任务
+	task func()
 
 	// The bucket that holds the list to which this timer's element belongs.
 	//
 	// NOTE: This field may be updated and read concurrently,
 	// through Timer.Stop() and Bucket.Flush().
+	//
 	b unsafe.Pointer // type: *bucket
-
+	// Timer 被组合为 *list.Element 插入到 list 中，这里是 Timer 对封装其的链表节点 list.Element 进行了引用
+	// 以便 Timer 元素知道其在链表中的前后元素
 	// The timer's element.
 	element *list.Element
 }
@@ -59,9 +63,11 @@ type bucket struct {
 	//
 	// For more explanations, see https://golang.org/pkg/sync/atomic/#pkg-note-BUG
 	// and https://go101.org/article/memory-layout.html.
+	// 任务的过期时间，这是一个时间戳
 	expiration int64
-
-	mu     sync.Mutex
+	// bucket 是持有一把锁的
+	mu sync.Mutex
+	// 相同过期时间的任务列表
 	timers *list.List
 }
 
